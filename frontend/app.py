@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+from datetime import date
 
 API_URL = "http://backend:8000/applications"
 
@@ -66,7 +67,7 @@ with st.expander("➕ Add New Application", expanded=True):
             ok, err = add_job(payload)
             if ok:
                 st.success("Application added!")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error(f"Error: {err}")
 
@@ -79,6 +80,10 @@ if status_filter != "all":
     jobs = [job for job in jobs if job["status"] == status_filter]
 
 if jobs:
+    # Initialize session state for editing
+    if 'editing_job_id' not in st.session_state:
+        st.session_state.editing_job_id = None
+
     st.write("Click 'Edit' to update status/notes, or 'Delete' to remove an application.")
     for job in jobs:
         with st.container():
@@ -89,33 +94,48 @@ if jobs:
             cols[3].markdown(f"[Link]({job['link']})" if job['link'] else "")
             cols[4].markdown(f"Applied: {job['applied_date'] or '-'}")
             cols[5].markdown(f"Updated: {job['updated_date'] or '-'}")
-            edit_btn = cols[6].button("Edit", key=f"edit_{job['id']}")
+            
+            # Change edit button to set session state
+            if cols[6].button("Edit", key=f"edit_{job['id']}"):
+                st.session_state.editing_job_id = job['id']
+                st.rerun()
+                
             del_btn = cols[7].button("Delete", key=f"del_{job['id']}")
 
-            if edit_btn:
-                with st.expander(f"Edit Application #{job['id']}", expanded=True):
-                    with st.form(f"edit_form_{job['id']}"):
-                        new_status = st.selectbox("Status", ["applied", "interview", "offer", "rejected"], index=["applied", "interview", "offer", "rejected"].index(job["status"]))
-                        new_notes = st.text_area("Notes", value=job["notes"] or "")
-                        submitted = st.form_submit_button("Update")
-                        if submitted:
-                            payload = {
-                                "status": new_status,
-                                "notes": new_notes,
-                                "updated_date": str(st.session_state.get("edit_date", None)) or None
-                            }
-                            ok, err = update_job(job["id"], payload)
-                            if ok:
-                                st.success("Application updated!")
-                                st.experimental_rerun()
-                            else:
-                                st.error(f"Error: {err}")
+            # Show edit form if this job is being edited
+            if st.session_state.editing_job_id == job['id']:
+                with st.form(f"edit_form_{job['id']}"):
+                    new_status = st.selectbox(
+                        "Status",
+                        ["applied", "interview", "offer", "rejected"],
+                        index=["applied", "interview", "offer", "rejected"].index(job["status"]),
+                    )
+                    new_notes = st.text_area("Notes", value=job["notes"] or "")
+                    col1, col2 = st.columns([1, 4])
+                    update_submitted = col1.form_submit_button("Save")
+                    if col2.form_submit_button("Cancel"):
+                        st.session_state.editing_job_id = None
+                        st.rerun()
+
+                    if update_submitted:
+                        update_payload = {
+                            "status": new_status,
+                            "notes": new_notes,
+                            "updated_date": str(date.today())
+                        }
+                        ok, err = update_job(job["id"], update_payload)
+                        if ok:
+                            st.session_state.editing_job_id = None
+                            st.success("Application updated!")
+                            st.rerun()
+                        else:
+                            st.error(f"Error: {err}")
 
             if del_btn:
                 ok, err = delete_job(job["id"])
                 if ok:
                     st.success("Application deleted!")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error(f"Error: {err}")
 else:
